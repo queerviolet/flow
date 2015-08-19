@@ -1,0 +1,913 @@
+A programming language where you can send messages between stack frames, as though they're servers,
+without passing or returning an event channel—the binding happens in the compiler.
+
+func A(a, b) {
+  p a, b
+  // declare the sprocket anywhere
+  @a_sprocket
+  // perform a blocking read from it and print the result
+  p <-a_sprocket
+  // You can also do this:
+  @->another_sprock(x, y) {
+    // Which becomes a blocking event listener which can take arguments.
+    p x, y
+  }
+
+  // You can have non-blocking event listeners too:
+  count = 0
+  @~>increment() {
+    ++count
+  }
+
+  @~>print() {
+    p count
+  }
+
+  @->done()
+
+  @<~"we can nonblockingly return multiple values (generator)"
+  yield @<~"will yield control until the concurrent block yields it back, maybe?"
+  yield "this is shorthand"
+  return @<-"and this is how we exit"
+  return "and this is also shorthand, though exeution will never reach here (error)"
+}
+
+func B() {
+  p A('hi', 'there') {
+    // This is a concurrent block. It runs while A is running.
+    // I think it terminates when A() returns, unless you fork or go
+    // or something.
+    @<-another_sprock('hello', 'world')
+
+    @<~print()
+    @<~increment()
+    @<~increment()
+    @<~print()
+    @<~done()
+  }
+}
+
+// This is pretty damn cool.
+
+// Oh, wow, and this is even better:
+
+// photo_urls must be passed, and may be written
+// to by a sprocket.
+func PhotoTable(@photo_urls) {
+  // It's sortof an interesting question if this should be a
+  // blocking or non-blocking read.
+  //
+  // I don't know if cache is at all interesting, useful,
+  // or even plausible here. I'll keep it to think about.
+  @->children cache {
+    @<-(FlexGrid(contents: for each url in photo_urls go PhotoView(url: url) {
+      @~>click(evt) {
+        // Handle a click event. So elegant!
+      }
+
+      @->detached(evt) { } // Done
+    }))
+  }
+}
+
+// If sprockets march up the stack, that's exception handling too.
+
+///////////////////////
+
+// Syntax cleanup:
+
+A programming language where you can send messages between stack frames, as though they're servers,
+without passing or returning an event channel—the binding happens in the compiler.
+
+func A(a, b) {
+  p a, b
+  // declare the sprocket anywhere
+  @a_sprocket
+  // perform a blocking read from it and print the result
+  p <-a_sprocket
+  // You can also do this:
+  @->another_sprock(x, y) {
+    // Which becomes a blocking event listener which can take arguments.
+    p x, y
+  }
+
+  // You can have non-blocking event listeners too:
+  count = 0
+  @~>increment() {
+    ++count
+  }
+
+  @~>print() {
+    p count
+  }
+
+  // @->done()
+
+  @<~"we can nonblockingly return multiple values (generator)"
+  yield @<~"will yield control until the concurrent block yields it back, maybe?"
+  yield "this is shorthand"
+  return @<-"and this is how we exit"
+  return "and this is also shorthand, though exeution will never reach here (error)"
+}
+
+func B() {
+  p A('hi', 'there') {
+    // This is a concurrent block. It runs while A is running.
+    // I think it terminates when A() returns, unless you fork or go
+    // or something.
+
+    // Call the @another_sprock function, unblocking A.
+    @another_sprock('hello', 'world')
+
+    // Dispatch of these calls is interesting. Simplest case: does
+    // the concurrent block have a sprocket named @another_sprock?
+    //
+    // I'd also like to be able to annotate function calls with
+    // something like:
+    A('passthrough', 'call') pass { }
+
+    // Though that's hideously long. Maybe child? Pass. Maybe this is the default
+    // behavior?
+    //
+    // In any case, this annotation passes through calls to @sprockets
+    // which don't exist, up to the concurrent block of B's caller. If
+    // B's block is also annotated child.
+    //
+    // Let's consider the implementation. I think it might be neat if this were
+    // the default behavior.
+    //
+    // We're basically doing prototypal function dispatch, where the
+    // prototype depends on your call tree. Each block would have
+    // multiple prototypes, depending on immediate caller. Since we don't
+    // allow weird reflectional shit, I think it's just the immediate
+    // caller we have to worry about.
+
+    // Prints 0, 2
+    @print()
+    @increment()
+    @increment()
+    @print()
+
+    // Unblocks line 104.
+    // @done()  // not needed.
+
+    // Calling @print here would (probably) fail, since A() will have
+    // exited, and the listeners will have gone out of scope?
+    //
+    // No, wait. I think concurrent blocks and their children always exit
+    // together, unless one of them was go'd off, and I don't even know
+    // if you can do that. In any case, I suppose done() is unnecessary here,
+    // since the sprockets in A will necessarily stay in scope until we've
+    // exited. Elegant!
+  }
+}
+
+/*
+
+Looping over sprockets.
+
+  for urls <- photo_urls {
+    @<-go flex.GridWithItems(width: <-width, height: <-height) {
+      on @item(index: i, width: w, height: h) {
+        @<- img(src: urls[i], width: w, height: h)
+      }
+    }
+  }
+
+  for urls<-photo_urls, w<-width, h<-height {
+    @<-go flex.Grid(width: width, height: height) {
+      on @item(index: i, width: w, height: h) {
+        @<- img(src: urls[i], width: w, height: h)
+      }
+    }
+  }
+  */
+
+// This is pretty damn cool.
+
+// Oh, wow, and this is even better:
+
+// photo_urls must be passed, and may be written
+// to by a sprocket.
+func PhotoTable(@photo_urls, @size={width: 640px, height: 480px}) {
+  @<-flex.Grid(&size) {
+    on @item(index: i, &size) {
+      @<- img(src: urls[i], &size)
+    }
+  }
+}
+
+///// Sample app
+
+func html() {
+  @<-[
+    nav() {
+
+    }
+    main() {
+
+    }
+  ]
+}
+
+// users.ctor:
+
+
+
+func show(&request, &user) {
+  @<-base.layout() {
+    on @page.title() {
+      @<-"User: $user.name"
+    }
+
+    on @content() {
+      @<- for post <- user.posts {
+        div(class: 'post') {
+          header(class: 'post-title') { @<- post.title }
+          div(class: 'post-content') {
+            @<- post.content
+          }
+        }
+      }
+    }
+  }
+}
+
+// &thing is shorthand for thing: thing
+//
+// Allows cleverness:
+//
+// &thing.to_upper()  =>  thing: thing.to_upper()
+// for t <- &thing { @<- t.to_upper() }
+//
+// Two are an error:
+//
+// &thing.include(&other)  => ambiguous key: only one '&' variable allowed per expression
+//
+// Emits the array [1, 2, 3]
+@<-[1,2,3]
+
+// For chaining:
+// Emiits 1, then 2, then 3
+@<-for [1, 2, 3]
+
+// This is really interesting.
+f(x: for [1, 2, 3])
+
+// Equivalent to?
+f(&x) for x <- [1, 2, 3]
+
+// No, because the above desugars to:
+
+for x <- [1, 2, 3] { @<- f(&x) }
+
+
+// I think f(x: for [1, 2, 3]) is not really different from
+// f(x: [1, 2, 3])
+
+// The many faces of for:
+//
+
+for x <- [1, 2, 3] {
+  p(x)
+}
+
+// value: [undefined, undefined, undefined]
+
+
+f(x) for x <- src { /* block */ }
+
+// Is sugar for:
+
+for x <- src {
+  @<- f(x) { /* block */ }
+}
+
+// The block can also be attached:
+
+f(x) { /* block */ } for x <- src
+
+// Proceeds after all have read once, and then again any time
+// a read proceeds.
+
+func A(@foo) {
+  @bar
+  for x <- foo, y <- bar {
+    p(x, y)
+  }
+}
+
+@<- for(timeout: 2sec) x <- range(10million) {
+  @<- x * x
+
+  @<-on @timeout(time) {
+    @error!('timed out')
+  }
+}
+
+func A() {
+  B() {
+    on thing <- @thing {
+      p(thing)
+    }
+  }
+}
+
+func B() {
+  C()
+}
+
+func C() {
+  @error!('trace.')
+}
+
+A() {
+  on @error!(msg) {
+    /* Let's agree that we should get here. How?
+    We call A(). The concurrent block is this one.
+    A() calls B(). The concurrent block is defined in A(), and has this block as its parent
+    B() calls C() with no concurrent block, so the concurrent block is still in A()
+    C() calls the @error!() block method. Method resolution looks in the block in A(), then
+    here. */
+  }
+}
+
+select(timeout: 10sec) {
+  for x <- foo, y <- bar {
+  
+  }
+
+  on time <- after(2sec) {
+
+  }
+}
+
+A(foo: 'hello') {
+  @bar <- 'world' // prints "hello", "world"
+  @foo <- 'goodbye' // prints "goodbye", "world"
+}
+
+func tag(name) {
+  @<- func(*args) {
+    await @detached(node) {
+      @done()
+    }
+  }
+}
+
+html := tag('html')
+
+func html(*args) {
+  args.each 
+}
+
+func SudokuBoard(@board, @size=9) {
+  @children <- for b <- board {
+    @<-table() {
+      @<- tr() for row <- b.rows {
+        @<- td(class: cell.value? 'free' : '') for cell <- row.cells {
+          @<- cell.value
+    
+          on @click(evt) {
+            p("$cell.row, $cell.col clicked")
+          }
+        }
+      }
+    }
+  }
+
+  on @created(node) {
+
+  }
+
+  on @attribute_changed(node, attr, old, new) {
+    @super(&&)
+
+  }
+
+  on @attached(node) {
+    await(timeout: 500ms) evt <- dom.listen('click', node) {
+
+    }
+  }
+
+  await @detached(node)
+}
+
+tag.register('sudoku-board', SudokuBoard)
+
+
+
+http.server(port: 'auto') {
+  on @handle(&request, response: w) {
+    @header('X-Info-Block', 'hello')
+
+    @<- switch (request) {
+      @<- case params := .match(GET, '/users/:user_id') {
+        @<-users.show(user: User.find(user_id: params.user_id))
+      }
+
+      @<- case params := request.match(GET, '/') {
+        @<-index()
+      }
+    }
+  }
+}
+
+http.server(port: 'auto') {
+  @mount(welcome, '/')
+  @mount(http.restful(users), '/users')
+  @mount(http.restful(lists), '/lists')
+}
+
+func countdown(until: end_date) {
+  running = true
+  @<-for time <- every(1s) {
+    @<- end_date - time
+    break if not running
+  }
+
+  await @halt() { running = false }
+
+
+}
+
+func beating_heart() {
+  @<-canvas() {
+    // this:
+    for time <- animation() {
+
+    }
+
+    // is sugar for:
+    animation() {
+      on time <- @ {
+
+      }
+    }
+  }
+}
+
+
+func welcome() {
+  @<-html() {
+    @<-[
+      head() {
+        @<-title() { @<- "Welcome to my app." }
+      },
+      body() {
+        @<-p() go {
+          @<-for every(1s) {
+            @<-Date.now()
+          }
+        }
+      }
+    ]
+  }
+}
+
+func welcome() {
+  @<-html(
+       head(title("Welcome to my app.")),
+       body(p() go {
+           @<-for every(1s) {
+             @<-Date.now()
+           }
+       })
+  )
+}
+
+func welcome() {
+  @<-html() {
+    @<-[
+      head(title("Welcome.")),
+      body() go {
+        @<-for every(1s) {
+          @<-Date.now()
+        }      
+      }
+    ]
+  }
+}
+
+html() <- [
+   head(title('Welcome.')),
+   body() <- go Date.now() for every(1s)
+
+   // desugared:
+   body() go {
+     @<- for every(1s) {
+       @<- Date.now()
+     }
+   }
+]
+
+function *welcome() {
+  yield html(function *(sprockets) {
+    yield [
+      title('Welcome to my app'),
+      body(function *(sprockets) {
+        yield* every(1000, function *() {
+          yield Date.now.toString(); 
+        });
+
+      })
+    ]
+  })
+}
+
+
+  // It's sortof an interesting question if this should be a
+  // blocking or non-blocking read.
+  //
+  // I don't know if cache is at all interesting, useful,
+  // or even plausible here. I'll keep it to think about.
+  on @draw() cache {
+    @<- FlexGrid(contents: for each url in photo_urls go PhotoView(url: url) {
+      on @click(evt) {
+        // Handle a click event. So elegant!
+      }
+
+      await @detached(evt) { } // Done
+    })
+  }
+
+  for time <~ every(2s) {
+    // Request a repaint every 2 seconds.
+    @repaint()
+  }
+
+  @<- go(context: worker) {
+
+  }
+
+  animating = true
+  for time in animation() {    
+    @stop() if not animating
+  }
+
+  query(users where matching(/Meryll/) in .publishers
+              and max(.pub_date) <= 2010)) {
+    on @change(old, new) {
+
+    }
+  }
+
+  // A select block aggregates blocking listeners, then
+  // dispatches matching events to exactly one of them.
+  //
+  // Non-blocking listeners dispatch normally? Or does
+  // select aggregate all blocks?
+  for 500.times() select {
+    await @stopAnimation() {
+      animating = false
+    }
+
+    await(timeout: 5s) { /* timed out */ }
+  }
+
+  // block until we detach from the DOM.
+  await @detached() { }
+}
+
+
+////////////// Implementation
+
+Here are the async operations:
+
+// Define a sprocket (not technically an operation)
+@sprocket
+
+// Write a value, blocking
+sprocket <- x
+
+// Read a value, blocking
+x <- sprocket
+
+// Write a value, non-blocking
+on sprocket <- x { /* proceed */ }
+
+// Read a value, non-blocking
+on x <- sprocket { /* proceed */ }
+
+// Call a sprocket function, blocking
+@some_function()
+
+// Call a normal function, blocking
+a_function()
+
+// Call a sprocket function, non-blocking
+go @some_function()
+
+// Call a normal function, non-blocking
+go a_function()
+
+
+We break a function down into states separated by events, and build the machines ourselves?
+
+Or do we emit generators?
+
+If we emit generators, then any func that uses sprockets can be a generator, which returns
+events of some kind (promises? or something cheaper?)
+
+yield _sprock.sprocket.write(x)
+
+_sprock.sprocket.on()
+
+x = yield _sprock.sprocket.read()
+
+var $foo, $bar;
+sprockets.read('foo', 'bar').on()
+
+_sprock.multi({foo: $foo, bar: $bar}).read().on(function(vars) {
+  $foo = vars.foo; $bar = vars.bar;
+
+})
+
+Sprocket.listen('foo', 'bar', 'baz')
+
+
+//// Program organization.
+//// Very node-like.
+
+index.ct:
+
+module := require('module.ct')
+
+export @module_level_sprocket, @another_one
+
+export func delete() {
+
+}
+
+export func create() {
+  // async send
+  @~click(1, 2, 3) {
+  }
+
+  // fatal send
+  @!error(str) {
+
+  }
+}
+
+// ---- 
+on @click(evt) {
+  @alert('hi!')
+}
+
+await @done() {
+  
+}
+
+// Adopted syntax
+foo() {
+  &using_gestures()
+  &with_common()
+}
+
+foo() &func_called_as_coblock(1, 2, 3)
+
+
+
+
+$_sprock_frame.click = function*(evt) {
+  yield $resolve($_sprock_frame.alert('hi'));
+};
+
+$_sprock_frame.done = function*() {
+  
+};
+
+yield $BlockUntilCalled($_co_frame.done);
+
+delete $_sprock_frame.click;
+delete $_sprock_frame.done;
+
+
+///////
+
+
+This generates a single 2:
+
+2
+
+So does this:
+
+{ @<- 2 }
+
+This sends 2 then three:
+
+{ @<- for [2, 3] }
+
+This block takes x and y and generates their sum:
+
+(x, y) { @<- x + y }
+
+So does this one?
+
+{ @<- $x + $y }
+
+And this?
+
+$x + $y
+
+// Modifiers
+
+go, for, func
+
+go: Evaluates the expression asynchronously. Always returns a server. You can read and write
+to servers, and make sprocket calls on them.
+
+x = go 2
+
+p(<- x)  // prints 2
+
+go is always a prefix modifier.
+
+// invalid: 2 go
+
+
+
+func: Declares the block as a function. I am increasingly unclear what effect this has. You can
+give it a name, and that's good.
+
+func Foo() 2
+
+Always prefix.
+
+
+for: Damn special, I guess:
+
+for x <- g { p(x) }
+
+squared := for x <- g x ** 2
+
+// Or, postfix
+
+squared := x ** 2 for x <- g
+
+// You can omit the extraction if you don't care:
+
+@<-x for x <- r
+
+// Shorter version?
+@ << r
+
+select: Proceed once on whichever branch unblocks first. Can be combined
+productively with for.
+
+select {
+  on x <- @A {
+
+  }
+
+  on y <- @B {
+
+  }
+}
+
+for select { ... }
+
+Runs the select until it has no living listeners. You can do pattern matching
+in the extraction. For pattern matching without blocking, use switch.
+
+switch:
+
+switch x {
+  case where .foo == 22, .bar: int {
+
+  }
+
+  default {
+
+  }
+}
+
+/// Types
+
+Totally optional and strict, I hope.
+
+You have numbers, strings, sequences, functions, objects, structures (structs).
+
+Numbers include complex numbers and (large, numerically-sized) matrix support.
+
+// Numbers:
+
+2   // -> int
+2.2 // -> float
+<1, 2> // -> <int 2x1>
+<1, 2; 3, 4> // -> <int 2x2>
+<1, 2; 3, 4 ;; 5, 6; 7, 8> // -> <int 2x2x2>
+
+// Objects don't look so different:
+<foo: 22, bar: 15>  // -> <foo: int, bar: int>
+
+// You can even turn them into vectors:
+
+<i: 24, j: 2.2> as <int 2x2> // -> <int 2x2>
+
+// Should that step even be necessary? I don't know if I automatically want to 
+// do vector ops to objects...
+//
+// Maybe I do. It seems reasonable. The only question then is how and whether to
+// preserve tags.
+
+Key in this is that you can make structs for complex numbers, for example:
+
+struct complex <i, j>
+
+<complex<i: 23.3, j: 32.3>, complex<i: 13, j: 22>> * complex.ident(2, 2)
+
+Or something like that, sugared.
+
+You can do swizzles on tagged components:
+
+x = <r: 10, g: 255, b: 232>
+y = <r: 33, g: 232, b: 223>
+
+x.(r,b,g) = x.(r,g,b)
+
+
+If you stuff x and y into a vector, you can work on their fields in it, too:
+
+v := <x, y>  // -> <<r: int, g: int, b: int> 2x1>
+
+v.r // -> <10, 33>
+v.(r,g) = v.(g,r)
+
+Objects can't do anything interesting in vectors, so they should be disallowed.
+
+Numbers and strings and sequences all can, though. I think it's most friendly
+to allow dispirate types, and say that matrices and vectors with uniform values
+of certain types will be faster (because they'll be backed with typed arrays).
+
+What if vectors are my selectable thing? oh, I love it.
+
+struct Student <
+  name: string
+  grade: int
+>
+
+students := <Student<'anna', 87>, Student<'beth', 99>, Student<'carla', 102>>
+
+students.name where .grade > 90  // -> <'beth', 'carla'>
+
+
+Do I need sequences? What is a sequence but a vector? A list? Vectors feel
+more strongly typed, but can't that be emergent?
+
+[2, 2]  // -> <int[2]>
+[sub: 'Hello', msg: 'World'] // -> <sub: str, msg: str>
+
+func f(x) {
+  v := <x.bar> // -> <?>
+
+  // The lookup on bar is dynamic, so the result has no type information
+  // attached. V is thus a vector of unknown type.
+}
+
+x = cat f()  // Is cat the best operator for this?
+
+
+// Data servers:
+
+l := list()
+for item <- l.each() { }
+l.items() // -> ?
+
+l := list(<name: 'anna', grade: 72>, <name: 'beth', grade: 82>)
+
+// sugarier:
+l := list(name: 'anna', grade: 72; name: 'beth', grade: 82)
+
+l.name where grade > 80  // -> 'beth'
+
+l join list(name: 'beth', value: 10) by .name
+
+canvas() {
+  ctx := @getContext('2d')
+  @width <~ 500px
+  @height <~ 500px
+
+  ctx.clearRect(0, 0, 500, 500)
+}
+
+
+
+ // Dictionary:
+
+ d := dict()
+ d['hello'] = 'world' {
+   // assignment co-routine block, catches events,
+   // optional.
+   on @existing(value) {
+     // Do something with the old value.
+   }
+ }
+
+
+
+
+
+

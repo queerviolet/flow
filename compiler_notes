@@ -1,0 +1,1075 @@
+We can break apart the set of executable code into patches. A patch consists
+of blocker, entry parameters, code, and exit parameters. The compiler can weave
+the patches together based on their shared blockers—it tries to link all writers
+to all readers, and connects them when their exit and entry conditions match.
+
+Then we can perform reductions. If a pair of patches always transitions into each other,
+merge them. Do this until no merges are possible.
+
+What if one listener always sits above another in the call stack?
+
+on C() {
+  @log("hello")
+}
+
+on B() {
+  C() {
+    on @log(x) {
+      p("intercepted!", x)
+      @log(...)
+    }
+  }
+}
+
+on A() {
+  B() {
+    on @log(x) {
+      p(x)
+    }
+  }
+}
+
+export File := server $[
+  bytes() -> byte...
+]
+
+export open(file: string) {
+  export bytes() {
+    @<- while read(1)
+  }
+}
+
+export pt2d := $[x, y]
+
+p := pt2d(x: 10, y: 10)
+
+
+The @log listener in the coblock in A is never called. How can we tell? Maybe there's an initial pass, where we map all possible call trees and see what would be in scope. I hope that's tractable.
+
+I guess that's how we find "blockers": we go look at all callers of the current func (or all entrants of the current patch?), and see where they forward-defined @log.
+
+[2, 2] + [3, 4]  // -> [5, 6]
+
+[x: 15, y: 22] + [x: 10, y: 10]  // -> [x: 25, y: 22]
+
+model * rot3d(axis: gimble, angle: 90deg)
+
+
+// Arguments and function signatures
+
+We pack and unpack function arguments like struct views. A listener matches if
+
+   signature(arguments)
+
+Would succeed.
+
+range := $[min, max]
+
+on arc(center: $[x, y],
+        radii: $[rx, ry],
+        angle (0.0 to 2 * PI): range in 0.0 to 2 * PI) {
+
+}
+
+These will all call that listener:
+
+arc(10, 10, 100, 100)
+arc(center: [10, 10], radii: [100, 100], angle: 0 to 2 * PI)
+arc(radii: [100, 100], center: [10, 10])
+arc(radii: [100, 100], 10, 10)
+
+Example:
+
+listener_args := $[
+  center: $[x, y]
+  radii: $[rx, ry]
+  angle (0 to 2 * PI): range in 0.0 to 2 * PI
+]
+
+    arc(radii: [100, 100], center: [10, 10])
+
+called_with = [
+  radii: [100, 100]
+  center: [10, 10]
+]
+
+arguments = listener_args(called_with)
+
+The way this works is that we first try to match labeled arguments.
+
+Then, we walk along the remaining unlabeled arguments and try to line them up
+to unmatched fields one by one.
+
+arguments = [
+  center: $[x, y]([10, 10])
+  radii: $[rx, ry]([100, 100])
+  angle: [min: 0, max: 2 * PI]
+]
+
+Then we proceed recursively:
+
+arguments = [
+  center: [x: 10, y: 10]
+  radii: [rx: 100, ry: 100]
+  angle: [min: 0, max: 2 * PI]
+]
+
+Unclear: should we have optional or mandatory fields (probably denoted with ! or ?)
+Resolved: yes, if we allow arbitrary expressions as guards, it makes sense to have optional
+fields like this?: <guard>
+
+# Atoms
+
+Atoms are written like THIS. They have no value, but you can compare them.
+
+x = SOMETHING
+
+if x == SOMETHING {
+  p('hi')  //-> 'hi'
+}
+
+# Constants
+
+const x = static type(bar)
+
+# static keyword
+
+static <expression>
+
+Evaluate <expression> at compile time. You can call functions normally—those
+functions are built at compile time and evaluated.
+
+# import keyword
+
+import <expression>
+
+Evaluate <expression> normally but pull any declared listeners into the current
+scope. 
+
+Example:
+
+img(src=img_source) {
+  for swipe <~ import touch.gestures.swipe(direction: HORIZONTAL) {
+    
+  }
+}
+
+touch.gesture.swipe listens for touch events and emits swipes as they occur.
+The import directive here causes its touch event listeners to be attached
+to the image.
+
+# Capturing sprockets
+
+Sprockets are lexical constructs, so you can't pass them around.
+
+   some_func(@x)
+
+This will actually cause some_func to be re-evaluated every time
+a value is pushed into @x. You can do the same thing with math expressions:
+
+   z = @x + @y
+   @x <- 3
+   @y <- 2
+   p(z) //-> 5
+   @x <- 9
+   p(z) //-> 11
+
+# Sprocket internals
+
+The easiest way to implement them would be to pass a sprocket scope down
+as an additional argument. We can push new sprockets into scope at each call site.
+
+Sprockets are pushed as UNRESOLVED. Unresolved sprockets hold a reference to
+a patch that must be run before they are resolved.
+
+Conditional sprockets, like this one:
+
+  if some_property {
+    on @optional_sprocket(x, y) {
+      // do something
+    }
+  }
+
+Compile into something more like this:
+
+  if some_property {
+    on @optional_sprocket(x, y) { }
+  } else {
+    __undefine_sprocket(@optional_sprocket)
+  }
+
+If a subsequent call tries to write @optional_sprocket, we'll run this function
+until we either have an active listener, or definitely don't.
+
+TODO: Do we actually need UNRESOLVED? The complexity of dispatch already requires
+us to run small checks to determine which function to call—we might well be fine
+just using those.
+
+# Sprocket meshes (solver)
+
+@width = @right - @left
+@height = @bottom - @top
+@top = @bottom - @height
+
+
+@top <- 0
+@left <- 0
+@width <- 100
+@height <- 200
+
+p(<-@right) //-> 200
+
+Q: Does @x = 5 mean something different than @x <- 5? Does it "hold" the value, somehow?
+
+Let's introduce function literals, with the arrow operator.
+
+args => <expression>
+
+Easy enough. This introduces a new scope for expression.
+
+Wow, can I take max of a function? That would be a rad way to express optimization!
+
+max(x => -x^2 + 20)
+
+
+for i in solve(i => { })
+
+
+I think max and solve might need to be implemented as rather complex macros. That's okay!
+I want flow to have a robust, but clean, macro system. I think flow is the right name for it
+(and I like it lower case—always lower case). It's shorter, cuter, more feminine. But constructor
+fits, because the language is essentially about assembling these little chains of robots.
+It's very good at smart, active templating, and it would be good at constructing itself.
+
+We'll need code capture literals, something like this: #{ } to make it easy to generate the
+AST.
+
+What about
+
+#{x}  //-> returns Identifier:x
+#(x) => {x} // returns (x: Code) => Code...
+
+The second is a macro function. How neat! I think it still lives in runtime reflection
+land unless we tell it not to somehow. Maybe static?
+
+on static f(x) #{
+  x
+}
+
+Hmm... I want to distinguish a replacement with a function that gets called to do the
+replacing. Do I? Isn't that what flow is good at?
+
+I think the braces have to go. They're confusing me.
+
+#x  // Identifier:x
+#(x) => {x} // FunctionLiteral...
+
+Hmm, I see the problem. But if we only want a function that returns Code reflectionally,
+we can do that already:
+
+(x) => #x
+
+So we get:
+
+// compile time substitution of x to x + 2. x is any expression.
+// this is at the AST level, so we don't have to worry about
+// parentheses or escaping that shit.
+on #close(x) {
+  @<- #x + 2
+}
+
+Which is so elegant.
+
+You can pull in libraries at compile time too, using the static keyword to
+make the assignment run at compile time:
+
+static ast := load('ast')
+
+This gives you a suite of AST manipulation tools in your macros.
+
+# Ooh, privacy!
+
+Lower-case sprocket names can only be seen by functions in the same file.
+Upper case are visible to all callers.
+
+# Partial application
+
+f(x)  // calls f
+f::(x) // returns f bound to x
+
+This is super useful in pipelines
+
+bunny.trace(element: an_element) >> sawtooth::(window: 2ms)
+
+# Processors
+
+%<processor> 
+
+Example:
+
+%js window.close();
+
+The % directive is very weird, and I'm not sure how I feel about it, but
+it's kindof amazing too.
+
+When encountered, the parser will statically call the named function (js,
+in this case), with a pointer to the source stream. The function can exit either
+successfully or with a SyntaxError. The parser then resumes what it was doing.
+(There's probably an Error that makes it stop)
+
+
+# Deeper function syntax
+
+What about?
+
+on @<sprocket> <function>
+
+Like:
+
+on @close(file: f) => {
+  
+}
+
+I really like it. Now => is a place that says where the program will...
+...flow...
+to :)
+
+#### Introduction
+
+Flow is a language designed to make it easy to express complex, mutating
+data structures, particularly trees. It does this by letting you write
+chains of generating expressions—a little tree of blocks and calls and immediate
+values. It's like assembling a bunch of little robots together.
+
+# Constant expressions
+
+Constants are the simplest expressions. They emit one value, once.
+
+  2
+
+Emits 2, once.
+
+  "hello"
+
+Likewise.
+
+You can also have constant expressions that emit multiple values.
+They look like this:
+
+  (1, 2, 3, 4)  // -> emits 1, then 2, then 3, etc.
+
+  ("hello", "world") // -> hello then world
+
+
+# Function expressions
+
+x => x^2
+
+This takes a value and returns a value. You can of course take multiple values.
+
+(x, y) => (x + y, x^2 + y^2)
+
+You may prefer to return a vector:
+
+(x, y) => [x + y, x^2 + y^2]
+
+The general rule is: return values in sequence when you want to represent
+them changing over time. What "over time" means depends on the context.
+
+
+# Flows
+
+You can stream values into and out of functions.
+
+  (1, 2, 3) >> (x) => x^2  // >>(1, 4, 9)
+
+Single values:
+
+  x <- (1, 2, 3)  // x will be 1
+
+You can flow asynchronously as well.
+
+  x <~ getch()
+
+x will eventually hold a character.
+
+Here's a way a loop can work:
+
+  range(5) >> (i) => {
+  
+  }
+
+And some other friends, coming back as functions:
+
+  // concatenates the streams
+  cat(one_thing(), another()) >> {
+
+  }
+
+  // I'm scared of the for macro's potential complexity,
+  // but would really like to include it.
+  for(10) >> (i) => {
+  
+  }
+
+You can match multiple packets with column notation:
+
+  open('file') >> (a: char; b: char) => {
+    // Read every two characters from file,
+    // non-overlapping.
+  }
+
+And there are more advanced selection operators as well:
+
+  // rolling window of 25 packets
+  read(device: MICROPHONE) >> window(25) >> (data: [25]AudioSample) => {
+
+  }
+
+  // Series unpacking
+  listen('mousedown', 'mousemove', 'mouseup') =>
+  (down: events.mouse.Down; move: events.mouse.Move; up: events.mouse.Up) {
+
+  }
+
+# More on the arrow operator
+
+Note the difference between this:
+
+  open('file') >> {
+    @ >> (c: char) => {
+      p(c)
+    }
+  }
+
+And this:
+
+  open('file') >> (c: char) => { p(c) }
+
+This (I think elegant) syntax is the result of two things:
+
+The arrow operator, which declares a function literal:
+
+  (x, y, z) => x^2 + y^2 + z^2
+
+And blocks, which declare a mini program:
+
+  {
+    // do stuff.
+  }
+
+A block is an expression. Let's talk more about that:
+
+# Expressions with input and output
+
+This, again, is a simple expression:
+
+   2
+
+No input. Outputs 2.
+
+Expressions can also require input. Here's an expression that
+requires input:
+
+  x => x + 1
+
+If we give it a name and feed it things:
+
+  f := x => x + 1
+  (1, 2, 3) >> f >> p // prints 2, 3, 4
+
+We could also do this:
+
+  p(f(1))  // prints 2
+
+Anyway, here's another way of writing that function
+
+  f := {
+    for() >> () => {
+      @@ -> x
+      x + 1 -> @@
+    }
+  }
+
+That looks a little awkward because all the basic loop
+constructs are implemented in terms of generator pipelines.
+
+That's fine. The point is to show that you can put two things
+into pipelines: blocks and functions. A function runs once for
+each packet, whereas a block acts like a little program, reading from
+@ to get packets and writing output packets to @. These two ways
+of expressing what should happen are isomorphic, and they are both
+preserved in flow because it's easy to express some things as a little
+program, and some things as a functional expression. In flow, it's
+easy to combine the two.
+
+This also means that the evaluation of expressions in flow can various
+kinds of complex parallel flows. For example, you can perform a blocking
+read on a socket, consume its value, then write some data into another.
+Or you can chain a reader to a map expression to a writer. It's your choice
+and responsibility to find the best way to express the data flow for your
+application. I want flow to be a playground that supports a lot of possibilities,
+while being as clear as possible.
+
+I'm getting the sense again that flow is a very simple language in some regard,
+which I find heartening. I think the last point of complexity is servers and
+methods.
+
+# Servers
+
+Maybe servers are very simple. You emit values, and each one becomes your public
+interface.
+
+I worry about being able to type check that, but perhaps we can.
+
+But no, that's too much. Servers... hmm. Okay, what if we took things at face value?
+Servers are, basically, futures. Oh, I like that. So I can say:
+
+  x := go some_long_operation()
+
+  x ~> (value) => {
+    // do something with the result.
+  }
+
+  // or, synchronously.
+  p(<-x)
+
+If I want to call operations on a server, I have to connect to it:
+
+  x ~> {
+    on StatusUpdate(status) => {
+
+    }
+  }
+
+The first part is the connection. This creates a block which is attached
+at the end of the pipeline represented by the server.
+
+Does this make method calls too cumbersome? Do we have another way of handling,
+e.g. the abstract data problem? I would prefer to encapsulate that sort of
+mutability, I think.
+
+What about
+
+  x->on Load() => { }
+
+Do we need the wrapping block? Maybe for listeners, but not to call:
+
+  x->Load('file')
+
+On the one hand, it's a pointer, so that's nice.
+
+On the other, does it make syntactic sense? It could be confused as
+reading a value out of x and pumping it into Load('file')—thus, it must *be*
+that thing. Load('file') opens a socket to its source and figures out what to do.
+
+What if we just sugared it a bit more. What does go actually do? It'll have
+access to the function's scope. It can take exported listeners:
+
+  on Load(name: string) => {
+
+  }
+
+And... oh, wow... yes. It takes those exported listeners and pushes them into an object:
+
+  [
+    Load: (name: string) => ()
+  ]
+
+Which it then emits as a value.
+
+Holy shit, typed servers. Right here. So now the story is that you can do this:
+
+  x.Load('file')
+
+And you'll just be looking up the Load function in an object (object? struct? is there a diference?) and calling it. If your signature changes, your type expression takes on
+another value. Sweet!
+
+I think excessive signature changes are probably crazy, but I like how it solves the
+type handshaking problem in terms of other problems that we're going to have to solve
+anyway.
+
+Also, apparently '.' now always means lookup in an object.
+
+
+# Breaking chains
+
+
+for(100) >> (i) => { break if(i == 22) }
+
+Returns a conclusive value. The function will never get called again with this pipeline.
+The pipeline takes on the final value of whatever was passed in to break, or nil
+(or undefined?) if it was empty.
+
+I think I might prefer exit to break. It's shorter, for one. And it feels very pleasantly
+procedural. Yes....
+
+  list.each() >> (item) => exit if item.probe(PROPERTY)
+
+You could use a where expression to do this more elegantly, but this option
+is nice too.
+
+
+# Pipeline mechanics
+
+When you pipe functions together, you can imagine them each wrapped in a server.
+
+  f(x) >> g
+
+  f(x) >> { @ >> g }
+
+Hm. That's not what I meant. But look at that. I think more and more, { }s just wrap
+chunks of code together. Like, it's a multi-statement literal.
+
+
+# Mutability
+
+Let's set a var x.
+
+  x = 5
+
+That's a write to x—we're holding its value at 5.
+
+We can also say something like this:
+
+  x = x + 1
+
+That's a read from x, and a write to x. This is kosher as well.
+
+You can only do two things to a var inside a single scope: you can
+read from it once, and you can write to it once. 
+
+  x = 5
+  x = 2 // error
+
+It's okay to apparently do multiple reads—the value will be read once
+and cached:
+
+  y = x^2 + z * x + 1 + x  // actual: x: 1 read, z: 1 read, y: 1 write
+
+And you can write to it multiple times if the writes are mutually exclusive:
+
+  if (should_check) {
+    question = read_question()
+  } else {
+    question = rand_question()
+  }
+
+  // Or, phrased better:
+  question = read_question() if should_check else rand_question()
+
+The compiler only understands that the then and else expressions are mutually exclusive.
+It doesn't perform any logic analysis on the predicate. This is simplest for correctness.
+
+Thus, you must use if-else chains or switch/select calls, which are also understood to be
+mutually exclusive.
+
+The way caching works is this: you can read a value multiple times. You can assume that it
+will not change between multiple references until a synchronous read is forced:
+
+   z = x + 2 * x
+   if (x + z > check()) { }  // x will not have changed from previous line.
+   _<-x  // force a read. the frame block sleeps until x changes.
+   c = x // x will now be different
+
+
+// Sugarless Flow
+
+Since function calls are identical to synchronous writes to a var, and definitions
+are equal to asynchronous reads, we can construct a desugared Flow using just the
+flow << >> operators. What does that look like?
+
+main -> (crypto_hash?) => {
+  "file.dat" -> open -> f => f.read >> {
+    rand.static -> hasher
+    @ >> hasher.update
+  }
+}
+
+This is totally the compiler's view of the world. We can clean it up a bit I'm sure.
+
+// Deep down
+
+Deep down, we're in the land of BlockFrames.
+
+When you do this:
+
+  f() >> g
+
+It's as though you wrote:
+
+  f() >> { @ >> g >> @ }
+
+Which looks kindof dumb, and you wouldn't write it, but my point is: there's a little
+robot block that's reading values out of input, calling your function until it's out.
+Or, put another way, you can declare a scope around however many packets you want.
+
+A thread literally threads down this chain. It is a queue processor of stacks, a little
+protein that walks along and modifies a long ribbon of stack frames, all linked up to one another.
+
+Blocks can always be broken up into cache regions. Cache regions have entry requirements,
+including cache assertions (thus must be in the cache), and exit promises. Each catch region
+is a patch—a wiring of inputs to outputs via a completely functional expression.
+
+// Names cleanup
+
+Let's call our version of require() pkg().
+
+  audio = pkg('audio')
+
+Each code file is a server. Its public interface is exactly what Go would export: all
+capitalized names. 
+
+  audio = pkg('audio')
+  audio.Open(:ASK) -> (context) => {
+    context.Record() >> context.Play()
+  }
+
+Import is what you do when you bring another scope into context—you import it.
+
+By default, pkg() simply returns a server. This works like any other, and the host namespace
+is unchanged.
+
+  import <expression>
+
+Pulls expression's listeners and interface into our own.
+
+You must import packages to get overloaded operators and a merged namespace.
+This makes everyone's life more predictable.
+
+
+// Patch entry
+
+Patch entry requirements are:
+
+  - cache assertions: the value for a name will be read if not in the cache.
+  - blocking read: a new value will be read for name. will block until name takes on a new
+    value.
+
+Patch exit promises are:
+
+  - cache assertions: the value for a name was asserted into cache by this block.
+  - write: this patch will satisfy a blocking read, if connected.
+
+
+// Magic beans
+
+if and go have the most magic, I think. There are two kinds of dispatching in flow.
+One is server to server, with sockets:
+
+  (1, 2, 3) >> (i) => {
+    @check(i) -> @
+  } >> on @check(i) => GOOD if i % 2 == 0 else BAD
+  >> p  //-> (BAD, GOOD, BAD)
+
+Calls move in the flow of data from source to sink. Sockets do too. Hmm. Any difference?
+
+Well, one is public and bound to the value if it's a server. (If it's not a server, it
+has a final value, so none of this matters.)
+
+Oh, that's elegant. That means that when we consider our source and sink blocks in the
+context of a block frame, we can think of them as servers. But they all will have terminated
+by the time the pipleline resolves. An example:
+
+  x = (1, 2, 3) >> (i) => go {
+    on GetServerInfo() => "Server $i"
+  }
+
+You can call methods if you import them or give them values:
+
+  recognizer = import recognize.gesture.swipes() >> (swipe) => {
+    if swipe.is_human {
+
+    }
+
+  }
+
+  >> x = 14 >> 
+
+
+# Compile time string parsing
+
+  %parser_name(options)
+
+Begins parsing the file following the call to parser. The effect is as though you did,
+
+  parser_name(options) << chars(rest_of_file)
+
+
+
+psql = pkg('pg/sql')
+
+bq = pkg('bigquery')
+
+db = bq.open()
+
+db.Query(%psql select * from wikipedia:public where whatever = TRUE;)
+
+
+# Overall language, simplified.
+
+Here's how you do objects:
+
+http.fl:
+
+  get: []byte
+
+  get ~>> (url: string) => {
+    %js http.get(%url, function(response) {
+      response.on('data', %@)
+              .on('error', %@error!);
+    }, %@error!);
+  }
+  
+  @ << [get: get]
+
+Q: Do we need to declare get?
+A: Well, get may have different types depending on what we pass to it. But let's be
+reasonably strict: every endpoint must have a named type within a given file, even
+if that type is anything
+
+list.fl:
+
+  @ ~>> (*t = of: Type) = [
+    of: of
+    __get: (index: int): of
+    __read: (): of...
+
+    new ~>> (items: []of): List(of: of) => {
+      @ ~>> items
+
+      @ = [
+        of = of,
+        __get ~>> (index: int) => items[index],
+        __read ~>> () => slices(of, from: items)
+      ]
+    }
+  ]
+
+list_user.fl
+
+  list = pkg('list')
+
+  ints = list(int).new(1, 2, 3)
+
+  p(<< ints) //->[1, 2, 3]
+
+  ints >> x => x^2 >> p //->[1, 4, 9]
+
+  ints << (10, 20, 30)
+
+  ints >> x => x^2 >> p //->[1, 4, 9, 100, 400, 900]
+
+# Operator overloading
+
+Can we do it? Let's say this:
+
+  x >> y
+
+Sugars to this:
+
+  [src: x, dst: y] >> operators.blocking_drain
+
+And somewhere we have this:
+
+  static operators = pkg('operators')
+
+  static *Readable ~>> (T: Type) = $[
+    %:read: () => T...
+  ]
+
+  static operators.blocking_drain ~>> (src: Readable(T), dst: T => out): out => {
+    @ >> src.%:read() >> dst >> @
+  }
+
+  static operators.blocking_drain ~>> (src: anything => T..., dst: T => out): out => {
+    *jsexpr := %js flow.drain(%src, flow.writer(%dst));
+    jsexpr >> @
+  }
+
+%:whatever is a parser symbol. % denotes a parser jump—that's a place where we
+jump into a parser (as resolved in the local scope) and use whatever it returns
+as the ast for the source it's consumed. %:symbol are handled specially—they simply
+return atomic nodes, which can be used as field names in objects to handle overloading
+operators.
+
+
+:= is scoped equals. It declares its LHS as scoped within the current block,
+and gives it the type of its RHS.
+
+
+These operators might be getting a little bananas.
+
+Single values:
+  Synchronous:
+    src -> dst
+    dst <- src
+
+    Read one value from src and write it into dst. If src is closed, returns its
+    final value.
+
+  Asynchronous:
+    src ~> dst
+    dst <~ src
+
+    Eventually read one value from src and write it into dst. Writes an event to @canceled!
+    if the frame block exits before it could complete.
+
+Multiple values:
+  Synchronous:
+    src >> dst
+    dst << src
+
+    The semantics of this operation are interesting. The pipe is complete when src
+    closes. That doesn't mean it can't be read from again. Consider:
+
+    on f(a, b) => {
+      @ << a
+      @next->_
+      @ << b
+    }
+
+    x = f((1, 2, 3), (4, 5, 6))
+    x >> p // 1, 2, 3
+    x <- { @next() }
+    x >> p // 4, 5, 6
+
+  Asynchronous:
+    src ~>> dst
+    dst <<~ src
+
+
+
+    src ~> dst ~> @canceled! ~>> (evt) => {
+      p(evt);
+    }
+
+    Or:
+
+    src ~> dst ~> on @canceled!(evt) => {
+
+    }
+
+    I like the `on` sugar. 
+
+// Scope
+
+   src >> dst ~> on @cancelled!(evt) => { }
+
+   src >> dst ~> { on @cancelled!(evt) => { } }
+
+Are these different?
+
+The first one could refer to the containing block.
+
+Yeah, and the second doesn't:
+
+  @click ~>> (x: int, y: int) => "$x, $y" -> @
+
+  // Double click listener
+  @click ~>> {
+    @ -> *click_1
+    select (@ ~> *click_2,
+            clock.wait(DoubleClickTimeout) ~> _)
+    click_2 ~> DoubleClickEvent ~> @
+  }
+
+
+
+// A tour so far
+
+// 1. single values
+
+  // comments
+
+  // atoms
+  // all capitalized
+  ATOMS
+
+  ATOM == ATOM // true
+  ATOM != DIFFERENT_ATOM // true as well
+
+  // numbers:
+  1
+  1.4
+
+  // with units:
+  2px
+
+  // we also have:
+  'strings'
+  "string with %replacement"
+
+  // objects:
+  [] // empty, nil
+  [x: 'hello', y: 'world'] // two fields
+  [1, 2, 3] // three values, accessed as [0], [1], [2]
+
+  o = [2, 4, 8, types: PRIMES]  
+  // o[0] = 2, o[1] = 4, o[2] = 8, o.types = PRIMES, o[3] = PRIMES
+  // This is how it packs values in the simplest case. Note that we
+  // get an index for labeled values as well.
+
+  [x: 23, y: 15] // I like this syntax the most. Let's make it happen.
+
+  // Single values take anything and emit one value when read.
+
+// 2. multiple values
+
+  (2, 3)  // this expression takes anything and emits the value of 2, then three.
+
+// 3. functions
+
+  x => x + 1 // this expression takes anything addable to an int and emits what it took + 1.
+
+// 4. pipes
+
+  (2, 3) >> *x => x + 1 >> p  // prints 3, then 4
+
+  // pipes are everything.
+
+
+*sum ~>> (*x, *y) => x + y
+
+([3, 4], [5, 6]) >> sum >> p
+  // 7, 11
+
+
+*@a_pipe_socket: string
+
+('hello', 'world') >> x => {
+  @a_pipe_socket <- x
+} {
+  @a_pipe_socket ~>> x => {
+    p(x)
+  }
+}
+
+
+div() << {
+  @ <- "hello" xaxw
+  _ <- clock.after(2s)
+  @ <- "world"
+}
+
+
+* @is_valid_name
+
+f = ('cat', 'Beth', 'table', 'Sue') >> @is_valid_name
+
+f ~>> @is_valid_name(name) => name == words.capitalize(name)
+
+
+x = static 2 + 2
+
+*sql = pkg('parsers/sql')
+
+
+%sql select * from whatever;
+
+on times(*count == 0) {}
+on times(*count > 0) => {
+  @ << (count - 1) times
+  @ <- (count - 1)
+}
+
