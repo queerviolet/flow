@@ -5,20 +5,27 @@
       return args;
     }
   }
+
+  function comments(ary) {
+    return ary.filter(function(note) {
+      return note.note;
+    });  
+  }
 }
 
-start
-  = _ body _
-
 body
-  = instruction*
+  = before:__ body:instruction* after:__ {
+    return {body: body, before: before, after: after};
+  }
 
 instruction
-  = _ pipeline:pipeline _ { return pipeline; }
+  = before:__ pipeline:pipeline after:__ {
+    return {pipeline: pipeline, before: before, after: after};
+  }
 
 pipeline
-  = src:additive _ pipe:op_pipe_ltr _ dst:pipeline?  { return pipe({src: src, dst: dst}); }
-  / dst:additive? _ pipe:op_pipe_rtl _ src:pipeline  { return pipe({src: src, dst: dst}); }
+  = src:additive _ pipe:op_pipe_ltr __ dst:pipeline?  { return pipe({src: src, dst: dst}); }
+  / dst:additive? _ pipe:op_pipe_rtl __ src:pipeline  { return pipe({src: src, dst: dst}); }
   / additive
 
 op_mul
@@ -38,37 +45,35 @@ op_pipe_rtl
   = op:$("<<~" / "<<" / "<~" / "<-") { return node(op); }
 
 additive
-  = left:multiplicative _ op_add _ right:additive
+  = left:multiplicative _ op_add __ right:additive
   / multiplicative
 
 multiplicative
-  = left:primary _ op_mul _ right:multiplicative
+  = left:primary _ op_mul __ right:multiplicative
   / primary
 
 primary
   = name
-  / number
+  / NumericLiteral
   / StringLiteral
+  / block
   / "(" _ additive:additive _ ")" { return additive; }
 
 name
-  = decl:"*"? _ sprock:"@"? name:$([a-z]i[^\n\t *+\-><~]*) {
+  = decl:"*"? _ sprock:"@"? name:$(IdentifierStart IdentifierPart*) {
     return {decl: decl, sprock: sprock, name: name};
+  } / "@" {
+    return {sprock: "@", name: null};
   }
 
-number "number"
-  = value:$([0-9]+ ("." [0-9]+)?) { return value * 1; }
-
-
+block
+  = "{" body:body "}" { return body; }
 _
-  = notes:(WhiteSpace / LineTerminatorSequence / Comment)* {
-    return notes.filter(function(note) {
-      return note.note;
-    });
-  }
+  = notes:(WhiteSpace / Comment)* { return comments(notes); }
 
-ws
-  = [ \t\n]
+__
+  = notes:(WhiteSpace / LineTerminatorSequence / Comment)* { return comments(notes); }
+
 
 /* A lot of this is taken from javascript.pegjs */
 
@@ -94,7 +99,7 @@ LineTerminatorSequence "end of line"
   / "\u2028"
   / "\u2029"
 
-Comment "comment"
+Comment "a comment"
   = MultiLineComment
   / SingleLineComment
 
@@ -213,11 +218,18 @@ UnicodeEscapeSequence
       return String.fromCharCode(parseInt(digits, 16));
     }
 
-IdentifierStart
+IdentifierStart "the beginning of a name"
   = UnicodeLetter
-  / "$"
   / "_"
   / "@"
+
+IdentifierPart
+  = IdentifierStart
+  / UnicodeCombiningMark
+  / UnicodeDigit
+  / UnicodeConnectorPunctuation
+  / "\u200C"
+  / "\u200D"
 
 /*
  * Unicode Character Categories

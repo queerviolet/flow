@@ -9,4 +9,13 @@
 * @hello
 
 hello ~>> print
+
+// print "world"
 hello <- 'world'
+
+/* another comment */
+
+read ~>> {
+  @ ~>> print
+  2 >> sin
+}
