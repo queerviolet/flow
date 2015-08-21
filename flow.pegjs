@@ -24,9 +24,65 @@ instruction
   }
 
 pipeline
-  = src:additive _ pipe:op_pipe_ltr _ dst:pipeline?  { return pipe({src: src, dst: dst}); }
-  / dst:additive? _ pipe:op_pipe_rtl _ src:pipeline  { return pipe({src: src, dst: dst}); }
+  = src:additive _ pipe:op_pipe_ltr __ dst:pipeline?  { return pipe({src: src, dst: dst}); }
+  / dst:additive? _ pipe:op_pipe_rtl __ src:pipeline  { return pipe({src: src, dst: dst}); }
   / additive
+
+additive
+  = left:multiplicative _ op_add __ right:additive
+  / multiplicative
+
+multiplicative
+  = left:primary _ op_mul __ right:multiplicative
+  / primary
+
+instruction_with_newlines
+  = before:__ pipeline:pipeline_with_newlines after:__ {
+    return {pipeline: pipeline, before: before, after: after};
+  }
+
+pipeline_with_newlines
+  = src:additive_with_newlines __ pipe:op_pipe_ltr __ dst:pipeline_with_newlines?  {
+      return pipe({src: src, dst: dst});
+    }
+  / dst:additive_with_newlines? __ pipe:op_pipe_rtl __ src:pipeline_with_newlines  {
+      return pipe({src: src, dst: dst});
+    }
+  / additive_with_newlines
+
+
+additive_with_newlines
+  = left:multiplicative_with_newlines __ op_add __ right:additive_with_newlines
+  / multiplicative_with_newlines
+
+multiplicative_with_newlines
+  = left:primary __ op_mul __ right:multiplicative_with_newlines
+  / primary
+
+primary
+  = name
+  / NumericLiteral
+  / StringLiteral
+  / block
+  / "(" instruction:instruction_with_newlines ")" { return instruction; }
+
+name
+  = decl:"*"? _ sprock:"@"? name:$(IdentifierStart IdentifierPart*) {
+    return {decl: decl, sprock: sprock, name: name};
+  } / "@" {
+    return {sprock: "@", name: null};
+  }
+
+block
+  = "{" body:body "}" { return body; }
+_
+  = notes:(WhiteSpace / Comment)* { return comments(notes); }
+
+__
+  = notes:(WhiteSpace / LineTerminatorSequence / Comment)* { return comments(notes); }
+
+
+/*** operators ***/
 
 op_mul
   = "*" / "/"
@@ -44,35 +100,6 @@ op_pipe_ltr
 op_pipe_rtl
   = op:$("<<~" / "<<" / "<~" / "<-") { return node(op); }
 
-additive
-  = left:multiplicative _ op_add __ right:additive
-  / multiplicative
-
-multiplicative
-  = left:primary _ op_mul __ right:multiplicative
-  / primary
-
-primary
-  = name
-  / NumericLiteral
-  / StringLiteral
-  / block
-  / "(" _ additive:additive _ ")" { return additive; }
-
-name
-  = decl:"*"? _ sprock:"@"? name:$(IdentifierStart IdentifierPart*) {
-    return {decl: decl, sprock: sprock, name: name};
-  } / "@" {
-    return {sprock: "@", name: null};
-  }
-
-block
-  = "{" body:body "}" { return body; }
-_
-  = notes:(WhiteSpace / Comment)* { return comments(notes); }
-
-__
-  = notes:(WhiteSpace / LineTerminatorSequence / Comment)* { return comments(notes); }
 
 
 /* A lot of this is taken from javascript.pegjs */

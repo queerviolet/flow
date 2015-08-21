@@ -17,5 +17,7 @@ hello <- 'world'
 
 read ~>> {
   @ ~>> print
-  2 >> sin
+  (2 >> sin
+    >> wherever)
+
 }
