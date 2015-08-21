@@ -1039,16 +1039,14 @@ Yeah, and the second doesn't:
 
 ('hello', 'world') >> x => {
   @a_pipe_socket <- x
-} {
-  @a_pipe_socket ~>> x => {
-    p(x)
-  }
+} ~> {
+  @a_pipe_socket ~>> p
 }
 
 
 div() << {
-  @ <- "hello" xaxw
-  _ <- clock.after(2s)
+  @ <- "hello"
+  <- clock.after(2s)
   @ <- "world"
 }
 

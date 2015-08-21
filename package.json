@@ -1,0 +1,19 @@
+{
+  "name": "flow",
+  "version": "1.0.0",
+  "description": "",
+  "main": "ctor.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/queerviolet/flow.git"
+  },
+  "author": "ashi",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/queerviolet/flow/issues"
+  },
+  "homepage": "https://github.com/queerviolet/flow#readme"
+}
