@@ -24,8 +24,8 @@ instruction
   }
 
 pipeline
-  = src:additive _ pipe:op_pipe_ltr __ dst:pipeline?  { return pipe({src: src, dst: dst}); }
-  / dst:additive? _ pipe:op_pipe_rtl __ src:pipeline  { return pipe({src: src, dst: dst}); }
+  = src:additive _ pipe:op_pipe_ltr _ dst:pipeline?  { return pipe({src: src, dst: dst}); }
+  / dst:additive? _ pipe:op_pipe_rtl _ src:pipeline  { return pipe({src: src, dst: dst}); }
   / additive
 
 op_mul
